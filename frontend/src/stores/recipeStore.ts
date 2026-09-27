@@ -1,11 +1,16 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
-import { calculateCompensatedMinutes } from '../hooks/useTempCompensate'
+import { db, plain, SCHEMA_REV } from '../utils/db'
+import {
+  compensatedMinutesForRecipe,
+  describeProcessMismatch,
+  PROCESS_BASELINE_TEMP_C,
+  resolveRecipeProcess
+} from '../utils/process'
 import type { DevRecipe } from '../types/dev-recipe'
 import type { Dilution } from '../types/developer'
 import type { PushPull } from '../types/dev-recipe'
 
-type NewRecipe = Omit<DevRecipe, 'id' | 'schemaRev'>
+type NewRecipe = Omit<DevRecipe, 'id' | 'schemaRev' | 'process'>
 
 export const useRecipeStore = defineStore('recipe', {
   state: () => ({
@@ -23,10 +28,13 @@ export const useRecipeStore = defineStore('recipe', {
       const matchesPushPull = state.filterPushPull === 'all' || recipe.pushPull === state.filterPushPull
       return matchesFilm && matchesDilution && matchesPushPull
     }),
+    /** 工艺明确的配方才能被冲洗记录选用；冲突配方只保留在配方表里待处理 */
+    selectableRecipes: (state) => state.recipes.filter((recipe) => recipe.process !== '冲突'),
+    conflictedRecipes: (state) => state.recipes.filter((recipe) => recipe.process === '冲突'),
     compensatedRecipes(): Array<DevRecipe & { compensatedMinutes: number }> {
       return this.filteredRecipes.map((recipe) => ({
         ...recipe,
-        compensatedMinutes: calculateCompensatedMinutes(recipe.devMinutes, this.targetTempC, recipe.tempC)
+        compensatedMinutes: compensatedMinutesForRecipe(recipe, this.targetTempC)
       }))
     }
   },
@@ -40,7 +48,18 @@ export const useRecipeStore = defineStore('recipe', {
       }
     },
     async addRecipe(payload: NewRecipe): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
+      const film = await db.films.get(payload.filmId)
+      const developer = await db.developers.get(payload.developerId)
+      if (!film || !developer) {
+        throw new Error('选中的胶片或显影液不存在，请刷新后重试')
+      }
+      const { process, mismatch } = resolveRecipeProcess(film, developer)
+      if (mismatch || process === '冲突') {
+        throw new Error(describeProcessMismatch(film, developer))
+      }
+      // 工艺基准温度由工艺决定：黑白 20°C、彩色 38°C，不接受其他基准
+      const tempC = PROCESS_BASELINE_TEMP_C[process]
+      const next = { ...payload, tempC, process, schemaRev: SCHEMA_REV }
       const id = await db.recipes.add(plain(next))
       await this.load()
       return id

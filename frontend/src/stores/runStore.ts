@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, SCHEMA_REV } from '../utils/db'
 import type { DevRun } from '../types/dev-run'
 
 type NewRun = Omit<DevRun, 'id' | 'schemaRev'>
@@ -24,14 +24,18 @@ export const useRunStore = defineStore('run', {
       }
     },
     async addRun(payload: NewRun): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
-      const id = await db.runs.add(plain(next))
       const recipe = await db.recipes.get(payload.recipeId)
-      if (recipe) {
-        const developer = await db.developers.get(recipe.developerId)
-        if (developer && developer.id !== undefined && developer.state !== '报废') {
-          await db.developers.update(developer.id, plain({ usedRolls: developer.usedRolls + 1 }))
-        }
+      if (!recipe) {
+        throw new Error('选中的配方不存在，请刷新后重试')
+      }
+      if (recipe.process === '冲突') {
+        throw new Error('该配方工艺冲突（胶片与显影液不属于同一工艺），不能用于冲洗记录，请先在配方表中处理')
+      }
+      const next = { ...payload, schemaRev: SCHEMA_REV }
+      const id = await db.runs.add(plain(next))
+      const developer = await db.developers.get(recipe.developerId)
+      if (developer && developer.id !== undefined && developer.state !== '报废') {
+        await db.developers.update(developer.id, plain({ usedRolls: developer.usedRolls + 1 }))
       }
       await this.load()
       return id

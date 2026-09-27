@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, SCHEMA_REV } from '../utils/db'
 import type { Developer } from '../types/developer'
 import { remainingRolls } from '../utils/ratio'
 
@@ -29,7 +29,7 @@ export const useDeveloperStore = defineStore('developer', {
       }
     },
     async addDeveloper(payload: NewDeveloper): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
+      const next = { ...payload, schemaRev: SCHEMA_REV }
       const id = await db.developers.add(plain(next))
       await this.load()
       return id

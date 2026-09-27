@@ -983,6 +983,43 @@ td em {
   font-size: 11px;
 }
 
+.mismatch-callout {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #dfb3a8;
+  border-radius: 11px;
+  color: #8a3a30;
+  background: #fbeae5;
+}
+
+.mismatch-callout strong {
+  font-size: 13px;
+}
+
+.mismatch-callout p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.recipe-process-chip {
+  width: fit-content;
+  margin-top: 6px;
+}
+
+.conflict-hint {
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.inline-form__tags {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .footer {
   display: flex;
   justify-content: space-between;

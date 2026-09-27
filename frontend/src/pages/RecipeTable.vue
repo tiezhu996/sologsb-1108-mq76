@@ -4,13 +4,22 @@ import { ElMessage } from 'element-plus'
 import DilutionInput from '../components/common/DilutionInput.vue'
 import PushPullTag from '../components/common/PushPullTag.vue'
 import TimeTempCurve from '../components/common/TimeTempCurve.vue'
-import { calculateCompensatedMinutes, useTempCompensate } from '../hooks/useTempCompensate'
+import { getCompensationAdvice } from '../hooks/useTempCompensate'
 import { useRecipeFilter } from '../hooks/useRecipeFilter'
 import { useDeveloperStore } from '../stores/developerStore'
 import { useFilmStore } from '../stores/filmStore'
 import { useRecipeStore } from '../stores/recipeStore'
+import {
+  baselineTempOfRecipe,
+  compensatedMinutesForRecipe,
+  describeProcessMismatch,
+  developerProcessOf,
+  filmProcessOf,
+  PROCESS_BASELINE_TEMP_C
+} from '../utils/process'
 import type { Developer, Dilution } from '../types/developer'
 import type { DevRecipe, PushPull } from '../types/dev-recipe'
+import type { RecipeProcess } from '../types/process'
 
 interface RecipeForm {
   filmId: number
@@ -33,11 +42,10 @@ const { filmId, dilution, pushPull, filteredRecipes, resetFilters } = useRecipeF
 const showForm = ref(false)
 const saving = ref(false)
 const sampleWorkingVolume = ref(300)
-const referenceTemp = computed(() => filteredRecipes.value[0]?.tempC ?? 20)
-const { actualTempC, suggest } = useTempCompensate(referenceTemp)
+const actualTempC = ref(20)
 
-watch(referenceTemp, (value) => {
-  actualTempC.value = value
+watch(() => filteredRecipes.value[0], (recipe) => {
+  if (recipe) actualTempC.value = baselineTempOfRecipe(recipe)
 }, { immediate: true })
 
 const form = reactive<RecipeForm>({
@@ -54,16 +62,45 @@ const form = reactive<RecipeForm>({
   note: ''
 })
 
+const selectedFilm = computed(() => filmStore.films.find((item) => item.id === form.filmId))
+const selectedDeveloper = computed(() => developerStore.developers.find((item) => item.id === form.developerId))
+const formFilmProcess = computed(() => filmProcessOf(selectedFilm.value))
+const formDeveloperProcess = computed(() => developerProcessOf(selectedDeveloper.value))
+const formMismatch = computed(() => (
+  formFilmProcess.value !== null
+  && formDeveloperProcess.value !== null
+  && formFilmProcess.value !== formDeveloperProcess.value
+))
+const mismatchMessage = computed(() => (
+  formMismatch.value && selectedFilm.value && selectedDeveloper.value
+    ? describeProcessMismatch(selectedFilm.value, selectedDeveloper.value)
+    : ''
+))
+
+// 基准温度跟随胶片工艺：黑白 20°C、彩色 38°C，登记时不允许脱离工艺基准
+watch([() => form.filmId, () => form.developerId], () => {
+  if (formFilmProcess.value) {
+    form.tempC = PROCESS_BASELINE_TEMP_C[formFilmProcess.value]
+  }
+}, { immediate: true })
+
 const curvePoints = computed(() => {
   const recipe = filteredRecipes.value[0]
   if (!recipe) return []
+  const baseline = baselineTempOfRecipe(recipe)
   return Array.from({ length: 13 }, (_, index) => {
-    const temp = Math.round((recipe.tempC - 3 + index * 0.5) * 10) / 10
+    const temp = Math.round((baseline - 3 + index * 0.5) * 10) / 10
     return {
       tempC: temp,
-      minutes: calculateCompensatedMinutes(recipe.devMinutes, temp, recipe.tempC)
+      minutes: compensatedMinutesForRecipe(recipe, temp)
     }
   })
+})
+
+const firstAdvice = computed(() => {
+  const recipe = filteredRecipes.value[0]
+  if (!recipe) return null
+  return getCompensationAdvice(recipe.devMinutes, actualTempC.value, baselineTempOfRecipe(recipe))
 })
 
 function filmLabel(id: number): string {
@@ -76,8 +113,14 @@ function developerLabel(id: number): string {
   return developer ? `${developer.name} · ${developer.category}` : '未知显影液'
 }
 
-function suggestedFor(recipe: { devMinutes: number; tempC: number }): number {
-  return suggest(recipe.devMinutes, actualTempC.value).minutes
+function processTone(process?: RecipeProcess): string {
+  if (process === '黑白') return 'status--cyan'
+  if (process === '彩色') return 'status--amber'
+  return 'status--danger'
+}
+
+function suggestedFor(recipe: DevRecipe): number {
+  return compensatedMinutesForRecipe(recipe, actualTempC.value)
 }
 
 function pickCurveTemp(temp: number): void {
@@ -104,6 +147,10 @@ async function submitRecipe(): Promise<void> {
     ElMessage.warning('请选择胶片、显影液并填写显影时间')
     return
   }
+  if (formMismatch.value) {
+    ElMessage.error(mismatchMessage.value)
+    return
+  }
   saving.value = true
   try {
     await recipeStore.addRecipe({
@@ -122,6 +169,8 @@ async function submitRecipe(): Promise<void> {
     ElMessage.success('冲洗配方已保存')
     form.note = ''
     showForm.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '配方保存失败')
   } finally {
     saving.value = false
   }
@@ -152,7 +201,7 @@ onMounted(async () => {
       <div class="inline-form__head">
         <div>
           <h2>编排冲洗配方</h2>
-          <p>温度与时间先记录基准值，滚动时间可在记录页按本次条件修正。</p>
+          <p>胶片与显影液必须同属一种工艺：彩色胶片配彩色套药，黑白胶片配黑白药；基准温度按工艺锁定（黑白 20°C、彩色 38°C）。</p>
         </div>
       </div>
       <div class="form-grid form-grid--four">
@@ -163,6 +212,7 @@ onMounted(async () => {
               {{ filmLabel(film.id ?? 0) }}
             </option>
           </select>
+          <small v-if="formFilmProcess">{{ formFilmProcess }}工艺 · 基准 {{ PROCESS_BASELINE_TEMP_C[formFilmProcess] }}°C</small>
         </label>
         <label class="span-2">
           <span>显影液</span>
@@ -171,7 +221,12 @@ onMounted(async () => {
               {{ developerLabel(developer.id ?? 0) }}
             </option>
           </select>
+          <small v-if="formDeveloperProcess">{{ formDeveloperProcess }}工艺 · 基准 {{ PROCESS_BASELINE_TEMP_C[formDeveloperProcess] }}°C</small>
         </label>
+        <div v-if="formMismatch" class="mismatch-callout span-4" data-testid="recipe-mismatch-warning" role="alert">
+          <strong>选串了，已当场拦下</strong>
+          <p>{{ mismatchMessage }}</p>
+        </div>
         <div class="span-2">
           <DilutionInput
             v-model:ratio="form.dilution"
@@ -181,8 +236,8 @@ onMounted(async () => {
           />
         </div>
         <label>
-          <span>显影温度</span>
-          <input v-model.number="form.tempC" data-testid="field-tempC" type="number" min="15" max="45" step="0.5" />
+          <span>显影温度（工艺基准）</span>
+          <input v-model.number="form.tempC" data-testid="field-tempC" type="number" min="15" max="45" step="0.5" disabled />
         </label>
         <label>
           <span>显影时间</span>
@@ -220,7 +275,7 @@ onMounted(async () => {
       </div>
       <div class="form-actions">
         <button type="button" class="ghost-button" @click="showForm = false">取消</button>
-        <button type="submit" class="primary-button" data-testid="submit-recipe" :disabled="saving">
+        <button type="submit" class="primary-button" data-testid="submit-recipe" :disabled="saving || formMismatch">
           {{ saving ? '保存中…' : '保存配方' }}
         </button>
       </div>
@@ -286,9 +341,18 @@ onMounted(async () => {
                 <td>
                   <strong>{{ filmLabel(recipe.filmId) }}</strong>
                   <small>{{ developerLabel(recipe.developerId) }} · {{ recipe.dilution }}</small>
+                  <span class="status-chip recipe-process-chip" :class="processTone(recipe.process)" data-testid="recipe-process">
+                    {{ recipe.process ?? '未知工艺' }}
+                  </span>
+                  <small v-if="recipe.process === '冲突'" class="conflict-hint">
+                    胶片与显影液工艺对不上，冲洗记录中不可选
+                  </small>
                   <em v-if="recipe.note">{{ recipe.note }}</em>
                 </td>
-                <td>{{ recipe.tempC }}°C / {{ recipe.devMinutes.toFixed(2) }} 分钟</td>
+                <td>
+                  {{ recipe.tempC }}°C / {{ recipe.devMinutes.toFixed(2) }} 分钟
+                  <small>{{ recipe.process === '冲突' ? '原记录基准，未折算' : '工艺基准温度' }}</small>
+                </td>
                 <td>
                   <strong class="accent-number">{{ suggestedFor(recipe).toFixed(2) }} 分钟</strong>
                   <small>{{ actualTempC }}°C 实测温度</small>
@@ -315,8 +379,8 @@ onMounted(async () => {
         />
         <div class="panel formula-note">
           <h2>补偿模型</h2>
-          <p>以配方自身温度为基准，每升高 1°C 将显影时间乘 0.9；每降低 1°C 则乘 1.1。</p>
-          <strong>{{ actualTempC }}°C · 建议 {{ suggest(filteredRecipes[0]?.devMinutes ?? 0, actualTempC).minutes.toFixed(2) }} 分钟</strong>
+          <p>以工艺基准温度为参考（黑白 20°C、彩色 38°C）：每升高 1°C 将显影时间乘 0.9，每降低 1°C 则乘 1.1。配方表与冲洗记录页共用同一折算口径，同一条配方得数一致。</p>
+          <strong v-if="firstAdvice">{{ actualTempC }}°C · 建议 {{ firstAdvice.minutes.toFixed(2) }} 分钟</strong>
         </div>
       </aside>
     </div>

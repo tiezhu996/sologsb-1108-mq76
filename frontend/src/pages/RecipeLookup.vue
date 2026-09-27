@@ -8,6 +8,7 @@ import { useDeveloperStore } from '../stores/developerStore'
 import { useFilmStore } from '../stores/filmStore'
 import { useRecipeStore } from '../stores/recipeStore'
 import { useRunStore } from '../stores/runStore'
+import type { RecipeProcess } from '../types/process'
 
 const filmStore = useFilmStore()
 const developerStore = useDeveloperStore()
@@ -34,6 +35,12 @@ function developerName(id: number): string {
   return developerStore.developers.find((developer) => developer.id === id)?.name ?? '未知显影液'
 }
 
+function processTone(process?: RecipeProcess): string {
+  if (process === '黑白') return 'status--cyan'
+  if (process === '彩色') return 'status--amber'
+  return 'status--danger'
+}
+
 function recipeName(id: number): string {
   const recipe = recipeStore.recipes.find((item) => item.id === id)
   if (!recipe) return '未知配方'
@@ -58,13 +65,17 @@ onMounted(async () => {
         <h1>参数速查台</h1>
         <p>把胶片、显影液与实冲记录放在同一张工作台上，快速定位下一卷的起始参数。</p>
       </div>
-      <div class="page-hero__stamp">20°C<br /><small>基准温度</small></div>
+      <div class="page-hero__stamp">黑白 20°C · 彩色 38°C<br /><small>工艺基准温度</small></div>
     </header>
 
     <div class="stat-strip">
       <StatBadge label="在册胶片" :value="filmStore.films.length" hint="按乳剂批次独立记录" tone="amber" />
       <StatBadge label="可用显影液" :value="developerStore.activeDevelopers.length" hint="不含已报废工作液" tone="cyan" />
-      <StatBadge label="有效配方" :value="recipeStore.recipes.length" hint="覆盖黑白与彩色流程" />
+      <StatBadge
+        label="有效配方"
+        :value="recipeStore.selectableRecipes.length"
+        :hint="recipeStore.conflictedRecipes.length > 0 ? `${recipeStore.conflictedRecipes.length} 条工艺冲突待处理` : '工艺配对均可用于冲洗'"
+      />
       <StatBadge label="冲洗记录" :value="runStore.runs.length" hint="可用于回溯样片结果" tone="rose" />
     </div>
 
@@ -115,6 +126,7 @@ onMounted(async () => {
                 <th>胶片</th>
                 <th>显影液</th>
                 <th>稀释</th>
+                <th>工艺</th>
                 <th>温度</th>
                 <th>显影时间</th>
                 <th>档位</th>
@@ -128,6 +140,9 @@ onMounted(async () => {
                 </td>
                 <td>{{ developerName(recipe.developerId) }}</td>
                 <td>{{ recipe.dilution }}</td>
+                <td>
+                  <span class="status-chip" :class="processTone(recipe.process)">{{ recipe.process ?? '未知' }}</span>
+                </td>
                 <td>{{ recipe.tempC }}°C</td>
                 <td>{{ recipe.devMinutes.toFixed(2) }} 分钟</td>
                 <td><PushPullTag :value="recipe.pushPull" /></td>

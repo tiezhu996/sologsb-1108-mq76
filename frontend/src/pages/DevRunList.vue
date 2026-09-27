@@ -10,6 +10,7 @@ import { useDeveloperStore } from '../stores/developerStore'
 import { useFilmStore } from '../stores/filmStore'
 import { useRecipeStore } from '../stores/recipeStore'
 import { useRunStore } from '../stores/runStore'
+import { baselineTempOfRecipe } from '../utils/process'
 import type { TankType } from '../types/dev-run'
 
 interface FilterValue {
@@ -60,7 +61,8 @@ const form = reactive<RunForm>({
 })
 
 const selectedRecipe = computed(() => recipeStore.recipes.find((recipe) => recipe.id === form.recipeId))
-const referenceTemp = computed(() => selectedRecipe.value?.tempC ?? 20)
+// 折算基准与配方表同一口径：工艺基准温度（黑白 20°C、彩色 38°C）
+const referenceTemp = computed(() => (selectedRecipe.value ? baselineTempOfRecipe(selectedRecipe.value) : 20))
 const { suggest } = useTempCompensate(referenceTemp)
 const suggestion = computed(() => {
   const recipe = selectedRecipe.value
@@ -94,7 +96,8 @@ function recipeLabel(id: number): string {
   if (!recipe) return '未知配方'
   const film = filmStore.films.find((item) => item.id === recipe.filmId)
   const developer = developerStore.developers.find((item) => item.id === recipe.developerId)
-  return `${film?.model ?? '未知胶片'} · ${developer?.name ?? '未知显影液'} · ${recipe.tempC}°C`
+  const process = recipe.process ? ` · ${recipe.process}工艺` : ''
+  return `${film?.model ?? '未知胶片'} · ${developer?.name ?? '未知显影液'} · ${recipe.tempC}°C${process}`
 }
 
 function recipeForRun(id: number) {
@@ -135,6 +138,8 @@ async function submitRun(): Promise<void> {
     form.batchNo = `R-${today.replace(/-/g, '')}-${String(runStore.runs.length + 1).padStart(2, '0')}`
     form.result = ''
     showForm.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '冲洗记录保存失败')
   } finally {
     saving.value = false
   }
@@ -149,8 +154,9 @@ async function writeBack(recipeId?: number, runId?: number): Promise<void> {
 
 onMounted(async () => {
   await Promise.all([filmStore.load(), developerStore.load(), recipeStore.load(), runStore.load()])
-  if (recipeStore.recipes[0]?.id !== undefined) {
-    form.recipeId = recipeStore.recipes[0].id
+  // 冲突配方不出现在可选列表里，默认选中第一条工艺明确的配方
+  if (recipeStore.selectableRecipes[0]?.id !== undefined) {
+    form.recipeId = recipeStore.selectableRecipes[0].id
   }
 })
 </script>
@@ -174,7 +180,10 @@ onMounted(async () => {
           <h2>录入本次实冲</h2>
           <p>选择配方后会自动带入基准条件，可依据实测温度一键采用修正时间。</p>
         </div>
-        <PushPullTag v-if="selectedRecipe" :value="selectedRecipe.pushPull" show-hint />
+        <div class="inline-form__tags">
+          <span v-if="selectedRecipe?.process" class="status-chip status--cyan">{{ selectedRecipe.process }}工艺</span>
+          <PushPullTag v-if="selectedRecipe" :value="selectedRecipe.pushPull" show-hint />
+        </div>
       </div>
       <div class="form-grid form-grid--three">
         <label>
@@ -184,10 +193,13 @@ onMounted(async () => {
         <label class="span-2">
           <span>冲洗配方</span>
           <select v-model.number="form.recipeId" data-testid="field-recipeId">
-            <option v-for="recipe in recipeStore.recipes" :key="recipe.id" :value="recipe.id">
+            <option v-for="recipe in recipeStore.selectableRecipes" :key="recipe.id" :value="recipe.id">
               {{ recipeLabel(recipe.id ?? 0) }}
             </option>
           </select>
+          <small v-if="recipeStore.conflictedRecipes.length > 0" class="conflict-hint">
+            {{ recipeStore.conflictedRecipes.length }} 条配方工艺冲突，已隐藏不可选，请先到配方表处理
+          </small>
         </label>
         <label>
           <span>实测温度</span>
@@ -215,7 +227,7 @@ onMounted(async () => {
         <div class="span-3 compensation-callout">
           <div>
             <strong>温度补偿建议</strong>
-            <p v-if="suggestion">{{ suggestion.advice }}；显影液用量会在保存后加一卷。</p>
+            <p v-if="suggestion">按{{ selectedRecipe?.process ?? '' }}工艺基准 {{ referenceTemp }}°C 折算：{{ suggestion.advice }}；显影液用量会在保存后加一卷。</p>
             <p v-else>请选择一条配方后查看修正建议。</p>
           </div>
           <button type="button" class="ghost-button" :disabled="!suggestion" @click="applySuggestion">采用修正时间</button>

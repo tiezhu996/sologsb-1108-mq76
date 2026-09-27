@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import DilutionInput from '../components/common/DilutionInput.vue'
 import StatBadge from '../components/common/StatBadge.vue'
 import { useDeveloperStore } from '../stores/developerStore'
+import { developerProcessOf } from '../utils/process'
 import type { Developer, DeveloperCategory, DeveloperState, Dilution } from '../types/developer'
 import { calculateStockVolume, remainingRolls } from '../utils/ratio'
 
@@ -168,6 +169,9 @@ onMounted(() => {
           <div class="entity-card__title">
             <div>
               <span class="status-chip" :class="`status--${stateTone(developer)}`">{{ developer.state }}</span>
+              <span class="status-chip" :class="developerProcessOf(developer) === '彩色' ? 'status--amber' : 'status--cyan'">
+                {{ developerProcessOf(developer) }}工艺
+              </span>
               <h2>{{ developer.name }}</h2>
             </div>
             <button
