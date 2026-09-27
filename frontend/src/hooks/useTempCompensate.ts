@@ -37,12 +37,16 @@ export function useTempCompensate(referenceTempC: Ref<number> = ref(20)) {
   const actualTempC = ref(referenceTempC.value)
   const advice = computed(() => getCompensationAdvice(10, actualTempC.value, referenceTempC.value))
 
-  function compensate(baseMinutes: number, tempC = actualTempC.value): number {
-    return calculateCompensatedMinutes(baseMinutes, tempC, referenceTempC.value)
+  function compensate(baseMinutes: number, tempC = actualTempC.value, referenceTemp = referenceTempC.value): number {
+    return calculateCompensatedMinutes(baseMinutes, tempC, referenceTemp)
   }
 
-  function suggest(baseMinutes: number, tempC = actualTempC.value): CompensationAdvice {
-    return getCompensationAdvice(baseMinutes, tempC, referenceTempC.value)
+  function suggest(
+    baseMinutes: number,
+    tempC = actualTempC.value,
+    referenceTemp = referenceTempC.value
+  ): CompensationAdvice {
+    return getCompensationAdvice(baseMinutes, tempC, referenceTemp)
   }
 
   return { referenceTempC, actualTempC, advice, compensate, suggest }

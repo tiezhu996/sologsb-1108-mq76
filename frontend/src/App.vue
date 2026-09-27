@@ -6,6 +6,7 @@ import { useFilmStore } from './stores/filmStore'
 import { useRecipeStore } from './stores/recipeStore'
 import { useRunStore } from './stores/runStore'
 import { downloadJson } from './utils/export'
+import { CURRENT_SCHEMA_REV } from './utils/db'
 
 const route = useRoute()
 const filmStore = useFilmStore()
@@ -28,7 +29,7 @@ function isActive(path: string): boolean {
 function exportAll(): void {
   downloadJson(`gbfilmdev-backup-${new Date().toISOString().slice(0, 10)}.json`, {
     exportedAt: new Date().toISOString(),
-    schemaRev: 2,
+    schemaRev: CURRENT_SCHEMA_REV,
     films: filmStore.films,
     developers: developerStore.developers,
     recipes: recipeStore.recipes,

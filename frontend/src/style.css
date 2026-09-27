@@ -1102,3 +1102,59 @@ td em {
     flex-direction: column;
   }
 }
+
+/* 工艺核对：选串配方时的即时提示 */
+.field-hint {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.process-alert {
+  padding: 10px 14px;
+  border: 1px solid #d18471;
+  border-radius: 10px;
+  color: #8f3f2f;
+  background: #fbe2da;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.process-alert strong {
+  margin-right: 6px;
+}
+
+.process-ok {
+  padding: 8px 14px;
+  border: 1px solid #93b9c1;
+  border-radius: 10px;
+  color: #275f6a;
+  background: #e5f2f4;
+  font-size: 13px;
+}
+
+.recipe-cell__head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mismatch-reason {
+  display: block;
+  line-height: 1.5;
+}
+
+.mismatch-inline {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.recipe-row--mismatch td {
+  opacity: 0.72;
+  background: #fdf3f1;
+}
+
+.recipe-row--mismatch em {
+  color: var(--danger);
+}

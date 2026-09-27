@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, CURRENT_SCHEMA_REV } from '../utils/db'
 import type { DevRun } from '../types/dev-run'
 
 type NewRun = Omit<DevRun, 'id' | 'schemaRev'>
@@ -24,14 +24,19 @@ export const useRunStore = defineStore('run', {
       }
     },
     async addRun(payload: NewRun): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
-      const id = await db.runs.add(plain(next))
+      // 工艺对不上的配方不允许再用于实冲
       const recipe = await db.recipes.get(payload.recipeId)
-      if (recipe) {
-        const developer = await db.developers.get(recipe.developerId)
-        if (developer && developer.id !== undefined && developer.state !== '报废') {
-          await db.developers.update(developer.id, plain({ usedRolls: developer.usedRolls + 1 }))
-        }
+      if (!recipe) {
+        throw new Error('所选配方不存在，无法登记冲洗记录')
+      }
+      if (recipe.processMismatch) {
+        throw new Error('该配方工艺对不上（胶片与药水不是同一套工艺），已停用，不能登记实冲')
+      }
+      const next = { ...payload, schemaRev: CURRENT_SCHEMA_REV }
+      const id = await db.runs.add(plain(next))
+      const developer = await db.developers.get(recipe.developerId)
+      if (developer && developer.id !== undefined && developer.state !== '报废') {
+        await db.developers.update(developer.id, plain({ usedRolls: developer.usedRolls + 1 }))
       }
       await this.load()
       return id

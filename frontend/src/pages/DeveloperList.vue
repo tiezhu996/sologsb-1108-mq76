@@ -5,6 +5,7 @@ import DilutionInput from '../components/common/DilutionInput.vue'
 import StatBadge from '../components/common/StatBadge.vue'
 import { useDeveloperStore } from '../stores/developerStore'
 import type { Developer, DeveloperCategory, DeveloperState, Dilution } from '../types/developer'
+import { PROCESS_LABEL, developerProcessOf } from '../utils/process'
 import { calculateStockVolume, remainingRolls } from '../utils/ratio'
 
 interface DeveloperForm {
@@ -167,6 +168,12 @@ onMounted(() => {
         <div class="entity-card__main">
           <div class="entity-card__title">
             <div>
+              <span
+                class="status-chip"
+                :class="(developer.process ?? developerProcessOf(developer.category)) === 'color' ? 'status--rose' : 'status--cyan'"
+              >
+                {{ PROCESS_LABEL[developer.process ?? developerProcessOf(developer.category)] }}
+              </span>
               <span class="status-chip" :class="`status--${stateTone(developer)}`">{{ developer.state }}</span>
               <h2>{{ developer.name }}</h2>
             </div>

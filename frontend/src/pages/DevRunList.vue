@@ -6,6 +6,7 @@ import EmptyPanel from '../components/common/EmptyPanel.vue'
 import FilterBar from '../components/common/FilterBar.vue'
 import PushPullTag from '../components/common/PushPullTag.vue'
 import { useTempCompensate } from '../hooks/useTempCompensate'
+import { baselineTempOf } from '../utils/process'
 import { useDeveloperStore } from '../stores/developerStore'
 import { useFilmStore } from '../stores/filmStore'
 import { useRecipeStore } from '../stores/recipeStore'
@@ -59,18 +60,23 @@ const form = reactive<RunForm>({
   result: '密度均匀，中间调细腻'
 })
 
+// 实冲页只能挑工艺对得上的配方；老配方补工艺后标出对不上的，这里选不到
+const runnableRecipes = computed(() => recipeStore.runnableRecipes)
 const selectedRecipe = computed(() => recipeStore.recipes.find((recipe) => recipe.id === form.recipeId))
-const referenceTemp = computed(() => selectedRecipe.value?.tempC ?? 20)
+const selectedProcess = computed(() => selectedRecipe.value?.process ?? null)
+// 与配方表同一条配方同一基准：黑白 20°C，彩色 38°C
+const referenceTemp = computed(() => baselineTempOf(selectedProcess.value ?? 'blackwhite'))
 const { suggest } = useTempCompensate(referenceTemp)
 const suggestion = computed(() => {
   const recipe = selectedRecipe.value
   if (!recipe) return null
-  return suggest(recipe.devMinutes, form.actualTempC)
+  return suggest(recipe.devMinutes, form.actualTempC, referenceTemp.value)
 })
 
 watch(selectedRecipe, (recipe) => {
   if (!recipe) return
-  form.actualTempC = recipe.tempC
+  // 实冲默认按工艺基准温度带入（黑白 20°C / 彩色 38°C），与配方表折算口径一致
+  form.actualTempC = referenceTemp.value
   form.actualMinutes = recipe.devMinutes
 }, { immediate: true })
 
@@ -94,7 +100,12 @@ function recipeLabel(id: number): string {
   if (!recipe) return '未知配方'
   const film = filmStore.films.find((item) => item.id === recipe.filmId)
   const developer = developerStore.developers.find((item) => item.id === recipe.developerId)
-  return `${film?.model ?? '未知胶片'} · ${developer?.name ?? '未知显影液'} · ${recipe.tempC}°C`
+  const processText = recipe.process === 'color' ? '彩色' : '黑白'
+  return `${film?.model ?? '未知胶片'} · ${developer?.name ?? '未知显影液'} · ${processText} ${referenceTempOf(recipe)}°C`
+}
+
+function referenceTempOf(recipe: { process?: 'blackwhite' | 'color' }): number {
+  return baselineTempOf(recipe.process ?? 'blackwhite')
 }
 
 function recipeForRun(id: number) {
@@ -135,6 +146,8 @@ async function submitRun(): Promise<void> {
     form.batchNo = `R-${today.replace(/-/g, '')}-${String(runStore.runs.length + 1).padStart(2, '0')}`
     form.result = ''
     showForm.value = false
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '冲洗记录保存失败')
   } finally {
     saving.value = false
   }
@@ -149,8 +162,8 @@ async function writeBack(recipeId?: number, runId?: number): Promise<void> {
 
 onMounted(async () => {
   await Promise.all([filmStore.load(), developerStore.load(), recipeStore.load(), runStore.load()])
-  if (recipeStore.recipes[0]?.id !== undefined) {
-    form.recipeId = recipeStore.recipes[0].id
+  if (runnableRecipes.value[0]?.id !== undefined) {
+    form.recipeId = runnableRecipes.value[0].id
   }
 })
 </script>
@@ -182,9 +195,9 @@ onMounted(async () => {
           <input v-model="form.batchNo" data-testid="field-batchNo" type="text" />
         </label>
         <label class="span-2">
-          <span>冲洗配方</span>
+          <span>冲洗配方（仅工艺合格的配方可选）</span>
           <select v-model.number="form.recipeId" data-testid="field-recipeId">
-            <option v-for="recipe in recipeStore.recipes" :key="recipe.id" :value="recipe.id">
+            <option v-for="recipe in runnableRecipes" :key="recipe.id" :value="recipe.id">
               {{ recipeLabel(recipe.id ?? 0) }}
             </option>
           </select>
@@ -192,6 +205,9 @@ onMounted(async () => {
         <label>
           <span>实测温度</span>
           <input v-model.number="form.actualTempC" data-testid="field-actualTempC" type="number" min="10" max="50" step="0.1" />
+          <small class="field-hint">
+            工艺基准 {{ referenceTemp }}°C（{{ selectedProcess === 'color' ? '彩色工艺' : '黑白工艺' }}）
+          </small>
         </label>
         <label>
           <span>实际时间</span>
@@ -214,9 +230,9 @@ onMounted(async () => {
         </label>
         <div class="span-3 compensation-callout">
           <div>
-            <strong>温度补偿建议</strong>
-            <p v-if="suggestion">{{ suggestion.advice }}；显影液用量会在保存后加一卷。</p>
-            <p v-else>请选择一条配方后查看修正建议。</p>
+            <strong>温度补偿建议（工艺基准 {{ referenceTemp }}°C）</strong>
+            <p v-if="suggestion">{{ suggestion.advice }}；与配方表同一配方同一基准折算，得数一致。显影液用量会在保存后加一卷。</p>
+            <p v-else>请选择一条工艺合格的配方后查看修正建议。</p>
           </div>
           <button type="button" class="ghost-button" :disabled="!suggestion" @click="applySuggestion">采用修正时间</button>
         </div>

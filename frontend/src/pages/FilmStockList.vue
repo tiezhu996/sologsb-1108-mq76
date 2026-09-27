@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import EmptyPanel from '../components/common/EmptyPanel.vue'
 import FilterBar from '../components/common/FilterBar.vue'
 import { useFilmStore } from '../stores/filmStore'
+import { PROCESS_LABEL } from '../utils/process'
 import type { FilmFormat, FilmModel } from '../types/film-stock'
 
 interface FilterValue {
@@ -208,6 +209,12 @@ onMounted(() => {
         <div class="entity-card__main">
           <div class="entity-card__title">
             <h2>{{ film.model }} · {{ film.format }}</h2>
+            <span
+              class="status-chip"
+              :class="(film.process ?? (film.model === 'Portra' ? 'color' : 'blackwhite')) === 'color' ? 'status--rose' : 'status--cyan'"
+            >
+              {{ PROCESS_LABEL[film.process ?? (film.model === 'Portra' ? 'color' : 'blackwhite')] }}
+            </span>
             <span class="status-chip" :class="stockStatus(film).className">
               {{ stockStatus(film).label }}
             </span>

@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, CURRENT_SCHEMA_REV } from '../utils/db'
 import type { Developer } from '../types/developer'
+import { developerProcessOf } from '../utils/process'
 import { remainingRolls } from '../utils/ratio'
 
-type NewDeveloper = Omit<Developer, 'id' | 'schemaRev'>
+type NewDeveloper = Omit<Developer, 'id' | 'schemaRev' | 'process'>
 
 export const useDeveloperStore = defineStore('developer', {
   state: () => ({
@@ -29,7 +30,7 @@ export const useDeveloperStore = defineStore('developer', {
       }
     },
     async addDeveloper(payload: NewDeveloper): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
+      const next = { ...payload, process: developerProcessOf(payload.category), schemaRev: CURRENT_SCHEMA_REV }
       const id = await db.developers.add(plain(next))
       await this.load()
       return id

@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, CURRENT_SCHEMA_REV } from '../utils/db'
+import { filmProcessOf } from '../utils/process'
 import type { FilmStock } from '../types/film-stock'
 
-type NewFilm = Omit<FilmStock, 'id' | 'schemaRev'>
+type NewFilm = Omit<FilmStock, 'id' | 'schemaRev' | 'process'>
 
 export const useFilmStore = defineStore('film', {
   state: () => ({
@@ -23,7 +24,7 @@ export const useFilmStore = defineStore('film', {
       }
     },
     async addFilm(payload: NewFilm): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
+      const next = { ...payload, process: filmProcessOf(payload.model), schemaRev: CURRENT_SCHEMA_REV }
       const id = await db.films.add(plain(next))
       await this.load()
       return id

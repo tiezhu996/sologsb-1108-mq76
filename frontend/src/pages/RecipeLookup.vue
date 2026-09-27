@@ -4,6 +4,7 @@ import StatBadge from '../components/common/StatBadge.vue'
 import TimeTempCurve from '../components/common/TimeTempCurve.vue'
 import PushPullTag from '../components/common/PushPullTag.vue'
 import { useRecipeFilter } from '../hooks/useRecipeFilter'
+import { baselineTempOf, PROCESS_LABEL as processLabel } from '../utils/process'
 import { useDeveloperStore } from '../stores/developerStore'
 import { useFilmStore } from '../stores/filmStore'
 import { useRecipeStore } from '../stores/recipeStore'
@@ -14,13 +15,15 @@ const developerStore = useDeveloperStore()
 const recipeStore = useRecipeStore()
 const runStore = useRunStore()
 const { filmId, dilution, pushPull, filteredRecipes, resetFilters } = useRecipeFilter()
+// 速查台只给工艺对得上的配方；对不上的老配方在配方表里标出、不进速查
+const visibleRecipes = computed(() => filteredRecipes.value.filter((recipe) => !recipe.processMismatch))
 const selectedTemp = ref(20)
 
 const curvePoints = computed(() => {
-  const recipes = filteredRecipes.value
+  const recipes = visibleRecipes.value
   if (recipes.length === 0) return []
   return recipes.map((recipe) => ({
-    tempC: recipe.tempC,
+    tempC: baselineTempOf(recipe.process ?? 'blackwhite'),
     minutes: recipe.devMinutes,
     label: filmName(recipe.filmId)
   }))
@@ -58,13 +61,13 @@ onMounted(async () => {
         <h1>参数速查台</h1>
         <p>把胶片、显影液与实冲记录放在同一张工作台上，快速定位下一卷的起始参数。</p>
       </div>
-      <div class="page-hero__stamp">20°C<br /><small>基准温度</small></div>
+      <div class="page-hero__stamp">20/38°C<br /><small>黑白 / 彩色基准</small></div>
     </header>
 
     <div class="stat-strip">
       <StatBadge label="在册胶片" :value="filmStore.films.length" hint="按乳剂批次独立记录" tone="amber" />
       <StatBadge label="可用显影液" :value="developerStore.activeDevelopers.length" hint="不含已报废工作液" tone="cyan" />
-      <StatBadge label="有效配方" :value="recipeStore.recipes.length" hint="覆盖黑白与彩色流程" />
+      <StatBadge label="可用药方" :value="recipeStore.runnableRecipes.length" hint="工艺合格，可直接冲卷" />
       <StatBadge label="冲洗记录" :value="runStore.runs.length" hint="可用于回溯样片结果" tone="rose" />
     </div>
 
@@ -115,26 +118,26 @@ onMounted(async () => {
                 <th>胶片</th>
                 <th>显影液</th>
                 <th>稀释</th>
-                <th>温度</th>
+                <th>工艺 / 基准温度</th>
                 <th>显影时间</th>
                 <th>档位</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="recipe in filteredRecipes" :key="recipe.id" @click="selectedTemp = recipe.tempC">
+              <tr v-for="recipe in visibleRecipes" :key="recipe.id" @click="selectedTemp = baselineTempOf(recipe.process ?? 'blackwhite')">
                 <td>
                   <strong>{{ filmName(recipe.filmId) }}</strong>
                   <small>配方 #{{ recipe.id }}</small>
                 </td>
                 <td>{{ developerName(recipe.developerId) }}</td>
                 <td>{{ recipe.dilution }}</td>
-                <td>{{ recipe.tempC }}°C</td>
+                <td>{{ processLabel[recipe.process ?? 'blackwhite'] }} · {{ baselineTempOf(recipe.process ?? 'blackwhite') }}°C</td>
                 <td>{{ recipe.devMinutes.toFixed(2) }} 分钟</td>
                 <td><PushPullTag :value="recipe.pushPull" /></td>
               </tr>
             </tbody>
           </table>
-          <div v-if="filteredRecipes.length === 0" class="inline-empty">当前条件没有匹配配方，请放宽筛选。</div>
+          <div v-if="visibleRecipes.length === 0" class="inline-empty">当前条件没有工艺合格的匹配配方，请放宽筛选。</div>
         </div>
       </div>
 
